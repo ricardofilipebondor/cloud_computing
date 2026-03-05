@@ -141,15 +141,16 @@ export  class Table {
             const isTableRenamed = (name !== newTableName);
 
             if (isTableRenamed) {
-                // Check if new name already exists
-                if (name !== newTableName && Indexer.findTable(newTableName)) {
+                if (Indexer.findTable(newTableName)) {
                     throw new Error(`Table '${newTableName}' already exists`);
                 }
 
-                // Create new directory for renamed table
-                await fs.promises.mkdir(newTableDir, { recursive: true });
+                
+                await fs.promises.rename(oldTableDir, newTableDir);
+                console.log(`Table renamed: '${name}' → '${newTableName}'`);
             }
 
+            // Always point to correct directory after potential rename
             const activeTableDir = isTableRenamed ? newTableDir : oldTableDir;
             const schemaFilePath = path.join(activeTableDir, "schema.json");
 
@@ -157,8 +158,8 @@ export  class Table {
             const schemaContent = JSON.stringify(newSchema);
             await fs.promises.writeFile(schemaFilePath, schemaContent, "utf8");
 
-            // Migrate existing rows
-            const files = await fs.promises.readdir(oldTableDir);
+            // Migrate existing rows (if schema columns changed)
+            const files = await fs.promises.readdir(activeTableDir);
 
             for (const file of files) {
                 // Skip schema.json
@@ -166,9 +167,8 @@ export  class Table {
                     continue;
                 }
 
-                const oldFilePath = path.join(oldTableDir, file);
-                const newFilePath = path.join(activeTableDir, file);
-                const content = await fs.promises.readFile(oldFilePath, "utf8");
+                const filePath = path.join(activeTableDir, file);
+                const content = await fs.promises.readFile(filePath, "utf8");
                 const oldRow = JSON.parse(content);
 
                 // Build new row with new schema
@@ -177,38 +177,28 @@ export  class Table {
                 // Add columns that exist in new schema
                 for (const newColumn of newSchema.columns) {
                     if (oldRow.hasOwnProperty(newColumn.name)) {
-                        // Column exists in old row - try to convert to new type if needed
                         const oldValue = oldRow[newColumn.name];
                         const columnType = newColumn.type;
                         
                         try {
                             newRow[newColumn.name] = Table.convertValue(oldValue, columnType);
                         } catch (err) {
-                            // If conversion fails, set to null (JSON-serializable)
                             console.warn(`Migration: Could not convert '${newColumn.name}' from ${typeof oldValue} to ${columnType}, setting to null`);
                             newRow[newColumn.name] = null;
                         }
                     } else {
-                        // New column - set to null (JSON-serializable) instead of undefined
                         newRow[newColumn.name] = null;
                     }
                 }
 
-                // Write migrated row
                 const migratedContent = JSON.stringify(newRow);
-                await fs.promises.writeFile(newFilePath, migratedContent, "utf8");
+                await fs.promises.writeFile(filePath, migratedContent, "utf8");
             }
 
-            // If table was renamed, remove old directory and update indexer
+            // Update indexer ONLY if table was renamed
             if (isTableRenamed) {
-                // Remove old directory
-                await fs.promises.rm(oldTableDir, { recursive: true });
-
-                // Update indexer: remove old name, add new name
                 Indexer.removeTable(name);
                 Indexer.addTable(newTableName);
-
-                console.log(`Table renamed: '${name}' → '${newTableName}'`);
             }
 
             return true;
