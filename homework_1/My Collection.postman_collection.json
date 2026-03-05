@@ -221,6 +221,14 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "Update table schema",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
     }
   ]
 }
