@@ -1,0 +1,226 @@
+{
+  "info": {
+    "_postman_id": "46edec9b-2cd3-485c-8c54-fd6e6ce77397",
+    "name": "My Collection",
+    "description": "### Welcome to Postman! This is your first collection. \n\nCollections are your starting point for building and testing APIs. You can use this one to:\n\n• Group related requests\n• Test your API in real-world scenarios\n• Document and share your requests\n\nUpdate the name and overview whenever you’re ready to make it yours.\n\n[Learn more about Postman Collections.](https://learning.postman.com/docs/collections/collections-overview/)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "51987067",
+    "_collection_link": "https://go.postman.co/collection/51987067-46edec9b-2cd3-485c-8c54-fd6e6ce77397?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Get tables",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/tables",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "tables"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create table",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"name\":\"users\",\r\n    \"columns\" : [\r\n        {\r\n            \"name\": \"name\",\r\n            \"type\": \"string\"\r\n        },\r\n        {\r\n            \"name\" : \"email\",\r\n            \"type\" :  \"string\"\r\n        },\r\n        {\r\n            \"name\": \"age\",\r\n            \"type\": \"number\"\r\n        }\r\n    ]\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:3000/tables",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "tables"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get table schema",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "method": "GET",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": ""
+        },
+        "url": {
+          "raw": "http://localhost:3000/tables/users",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "tables",
+            "users"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create row in a table",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"name\" : \"John Doe\",\r\n    \"email\": \"jhondoe@gmail.com\",\r\n    \"age\": 30\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:3000/tables/users/rows",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "tables",
+            "users",
+            "rows"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get all rows from a table",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "method": "GET",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"id\" : 1,\r\n    \"name\": \"John Doe\"\r\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/tables/users/rows",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "tables",
+            "users",
+            "rows"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get row by id",
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      },
+      "request": {
+        "method": "GET",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"id\" : 1,\r\n    \"email\": \"John Doe\"\r\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/tables/users/rows/72ebc979-06e8-4142-b5a6-64f230d0c264",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "tables",
+            "users",
+            "rows",
+            "72ebc979-06e8-4142-b5a6-64f230d0c264"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Delete row",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/tables/users/rows/72ebc979-06e8-4142-b5a6-64f230d0c264",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "tables",
+            "users",
+            "rows",
+            "72ebc979-06e8-4142-b5a6-64f230d0c264"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update row",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"name\" : \"Ricardo\",\r\n    \"email\" : \"ricardo@gmail.com\",\r\n    \"age\": 21\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:3000/tables/users/rows/72ebc979-06e8-4142-b5a6-64f230d0c264",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "3000",
+          "path": [
+            "tables",
+            "users",
+            "rows",
+            "72ebc979-06e8-4142-b5a6-64f230d0c264"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

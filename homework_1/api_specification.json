@@ -1,0 +1,152 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "My Collection",
+    "version": "1.0.0",
+    "description": "### Welcome to Postman! This is your first collection. \n\nCollections are your starting point for building and testing APIs. You can use this one to:\n\n• Group related requests\n• Test your API in real-world scenarios\n• Document and share your requests\n\nUpdate the name and overview whenever you’re ready to make it yours.\n\n[Learn more about Postman Collections.](https://learning.postman.com/docs/collections/collections-overview/)"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
+  "paths": {
+    "/tables": {
+      "get": {
+        "summary": "Get tables",
+        "responses": {}
+      },
+      "post": {
+        "summary": "Create table",
+        "responses": {},
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "columns": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "name": "users",
+                "columns": [
+                  {
+                    "name": "name",
+                    "type": "string"
+                  },
+                  {
+                    "name": "email",
+                    "type": "string"
+                  },
+                  {
+                    "name": "age",
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tables/users": {
+      "get": {
+        "summary": "Get table schema",
+        "responses": {}
+      }
+    },
+    "/tables/users/rows": {
+      "post": {
+        "summary": "Create row in a table",
+        "responses": {},
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "age": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "example": {
+                "name": "John Doe",
+                "email": "jhondoe@gmail.com",
+                "age": 30
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get all rows from a table",
+        "responses": {}
+      }
+    },
+    "/tables/users/rows/72ebc979-06e8-4142-b5a6-64f230d0c264": {
+      "get": {
+        "summary": "Get row by id",
+        "responses": {}
+      },
+      "delete": {
+        "summary": "Delete row",
+        "responses": {}
+      },
+      "put": {
+        "summary": "Update row",
+        "responses": {},
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "age": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "example": {
+                "name": "Ricardo",
+                "email": "ricardo@gmail.com",
+                "age": 21
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
