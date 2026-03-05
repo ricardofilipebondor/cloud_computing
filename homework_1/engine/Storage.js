@@ -58,6 +58,37 @@ export  class Table {
         }
     }
 
+    static convertValue(value, targetType) {
+        if (value === undefined || value === null) {
+            return undefined;
+        }
+
+        const currentType = typeof value;
+
+        // If already correct type, return as-is
+        if (currentType === targetType) {
+            return value;
+        }
+
+        // Try to convert
+        if (targetType === "string") {
+            return String(value);
+        } else if (targetType === "number") {
+            const num = Number(value);
+            if (isNaN(num)) {
+                throw new Error(`Cannot convert "${value}" to number`);
+            }
+            return num;
+        } else if (targetType === "boolean") {
+            if (typeof value === "string") {
+                return value.toLowerCase() === "true";
+            }
+            return Boolean(value);
+        }
+
+        throw new Error(`Unsupported type: ${targetType}`);
+    }
+
     async #createTableDirector(name) {
         const dirPath = path.join(Indexer.dataDirectoryPath, name);
         try {
@@ -92,7 +123,100 @@ export  class Table {
         }
     }
 
-    
+    static async update(name, newSchema) {
+        if (!Validator.validateSchema(newSchema)) {
+            throw new Error("Invalid schema!");
+        }
+
+        if (!Indexer.findTable(name)) {
+            throw new Error(`Table '${name}' not found`);
+        }
+
+        try {
+            const oldTableDir = path.join(Indexer.dataDirectoryPath, name);
+            const newTableName = newSchema.name;
+            const newTableDir = path.join(Indexer.dataDirectoryPath, newTableName);
+
+            // Check if table name is being changed
+            const isTableRenamed = (name !== newTableName);
+
+            if (isTableRenamed) {
+                // Check if new name already exists
+                if (name !== newTableName && Indexer.findTable(newTableName)) {
+                    throw new Error(`Table '${newTableName}' already exists`);
+                }
+
+                // Create new directory for renamed table
+                await fs.promises.mkdir(newTableDir, { recursive: true });
+            }
+
+            const activeTableDir = isTableRenamed ? newTableDir : oldTableDir;
+            const schemaFilePath = path.join(activeTableDir, "schema.json");
+
+            // Update schema file
+            const schemaContent = JSON.stringify(newSchema);
+            await fs.promises.writeFile(schemaFilePath, schemaContent, "utf8");
+
+            // Migrate existing rows
+            const files = await fs.promises.readdir(oldTableDir);
+
+            for (const file of files) {
+                // Skip schema.json
+                if (file === "schema.json" || !file.endsWith(".json")) {
+                    continue;
+                }
+
+                const oldFilePath = path.join(oldTableDir, file);
+                const newFilePath = path.join(activeTableDir, file);
+                const content = await fs.promises.readFile(oldFilePath, "utf8");
+                const oldRow = JSON.parse(content);
+
+                // Build new row with new schema
+                const newRow = {};
+                
+                // Add columns that exist in new schema
+                for (const newColumn of newSchema.columns) {
+                    if (oldRow.hasOwnProperty(newColumn.name)) {
+                        // Column exists in old row - try to convert to new type if needed
+                        const oldValue = oldRow[newColumn.name];
+                        const columnType = newColumn.type;
+                        
+                        try {
+                            newRow[newColumn.name] = Table.convertValue(oldValue, columnType);
+                        } catch (err) {
+                            // If conversion fails, set to null (JSON-serializable)
+                            console.warn(`Migration: Could not convert '${newColumn.name}' from ${typeof oldValue} to ${columnType}, setting to null`);
+                            newRow[newColumn.name] = null;
+                        }
+                    } else {
+                        // New column - set to null (JSON-serializable) instead of undefined
+                        newRow[newColumn.name] = null;
+                    }
+                }
+
+                // Write migrated row
+                const migratedContent = JSON.stringify(newRow);
+                await fs.promises.writeFile(newFilePath, migratedContent, "utf8");
+            }
+
+            // If table was renamed, remove old directory and update indexer
+            if (isTableRenamed) {
+                // Remove old directory
+                await fs.promises.rm(oldTableDir, { recursive: true });
+
+                // Update indexer: remove old name, add new name
+                Indexer.removeTable(name);
+                Indexer.addTable(newTableName);
+
+                console.log(`Table renamed: '${name}' → '${newTableName}'`);
+            }
+
+            return true;
+        } catch (error) {
+            console.error(error);
+            throw error;
+        }
+    }
 
     delete() {}
     update() {}

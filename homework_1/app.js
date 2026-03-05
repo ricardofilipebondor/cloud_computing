@@ -153,6 +153,49 @@ const server = http.createServer(async (req,res) => {
         return;
     }
 
+    // PUT /tables/{name} - Update table schema
+    if(tableSchemaMatch && req.method === "PUT"){
+        const tableName = tableSchemaMatch[1];
+        let body = "";
+        req.on("data", chunk => {
+            body += chunk;
+        });
+        req.on("end", async () => {
+            try {
+                const parsed = JSON.parse(body);
+                
+                // Update schema and migrate rows
+                await Table.update(tableName, parsed);
+                
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ 
+                    status: "ok",
+                    code: 200,
+                    message: "Table schema updated successfully",
+                    table: tableName,
+                    migratedSchema: parsed
+                }));
+            } catch (err) {
+                if (err.message.includes("not found")) {
+                    res.writeHead(404, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ 
+                        status: "error",
+                        code: 404,
+                        message: err.message
+                    }));
+                } else {
+                    res.writeHead(400, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ 
+                        status: "error",
+                        code: 400,
+                        message: err.message || "Invalid schema"
+                    }));
+                }
+            }
+        });
+        return;
+    }
+
     // DELETE /tables/{name} - Delete table
     if(tableSchemaMatch && req.method === "DELETE"){
         const tableName = tableSchemaMatch[1];
