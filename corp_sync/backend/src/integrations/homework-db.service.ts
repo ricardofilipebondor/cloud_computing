@@ -93,6 +93,66 @@ export class HomeworkDbService {
     ],
   };
 
+  private getStatus(error: unknown): number | undefined {
+    return (error as AxiosError).response?.status;
+  }
+
+  private isStatus(error: unknown, status: number): boolean {
+    return this.getStatus(error) === status;
+  }
+
+  private mapClientRow(row: { id: string; data: Record<string, unknown> }): ClientRow {
+    const payload = row.data as {
+      client_type?: 'individual' | 'company';
+      name?: string;
+      email?: string;
+      phone?: string;
+      tax_identifier?: string;
+      address?: string;
+    };
+
+    return {
+      id: row.id,
+      client_type: payload.client_type ?? 'individual',
+      name: String(payload.name ?? ''),
+      email: String(payload.email ?? ''),
+      phone: String(payload.phone ?? ''),
+      tax_identifier: String(payload.tax_identifier ?? ''),
+      address: String(payload.address ?? ''),
+    };
+  }
+
+  private mapInvoiceRow(row: { id: string; data: Record<string, unknown> }): InvoiceRow {
+    const payload = row.data as {
+      client_id?: string;
+      invoice_number?: string;
+      description?: string;
+      subtotal_amount?: number;
+      tax_amount?: number;
+      total_amount?: number;
+      currency?: string;
+      products_json?: string;
+      issue_date?: string;
+      due_date?: string;
+      status?: 'draft' | 'sent' | 'paid' | 'overdue';
+    };
+
+    return {
+      id: row.id,
+      client_id: String(payload.client_id ?? ''),
+      invoice_number: String(payload.invoice_number ?? ''),
+      description: String(payload.description ?? ''),
+      subtotal_amount: Number(payload.subtotal_amount ?? 0),
+      tax_amount: Number(payload.tax_amount ?? 0),
+      total_amount: Number(payload.total_amount ?? 0),
+      currency: String(payload.currency ?? '').toUpperCase(),
+      products_json: String(payload.products_json ?? '[]'),
+      issue_date: String(payload.issue_date ?? ''),
+      due_date: String(payload.due_date ?? ''),
+      status: payload.status ?? 'draft',
+    };
+  }
+
   async tableExists(tableName: string): Promise<boolean> {
     try {
       const response = await firstValueFrom(
@@ -100,8 +160,7 @@ export class HomeworkDbService {
       );
       return response.status === 200;
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) {
+      if (this.isStatus(error, 404)) {
         return false;
       }
       throw new ServiceUnavailableException(
@@ -130,8 +189,7 @@ export class HomeworkDbService {
     try {
       await firstValueFrom(this.httpService.post(`${this.baseUrl}/tables`, schema));
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 409) {
+      if (this.isStatus(error, 409)) {
         return;
       }
       throw new ServiceUnavailableException(
@@ -159,11 +217,10 @@ export class HomeworkDbService {
       );
       return { rowId: (response.data as { id?: string }).id };
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) {
+      if (this.isStatus(error, 404)) {
         throw new NotFoundException("Table 'clients' not found in Homework DB");
       }
-      if (axiosError.response?.status === 400) {
+      if (this.isStatus(error, 400)) {
         throw new InternalServerErrorException(
           'Homework DB rejected client payload (schema mismatch or invalid data)',
         );
@@ -178,11 +235,10 @@ export class HomeworkDbService {
         this.httpService.put(`${this.baseUrl}/tables/clients/rows/${clientId}`, client),
       );
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) {
+      if (this.isStatus(error, 404)) {
         throw new NotFoundException(`Client '${clientId}' not found`);
       }
-      if (axiosError.response?.status === 400) {
+      if (this.isStatus(error, 400)) {
         throw new InternalServerErrorException('Homework DB rejected client update payload');
       }
       throw new ServiceUnavailableException('Homework DB unavailable while updating client');
@@ -193,8 +249,7 @@ export class HomeworkDbService {
     try {
       await firstValueFrom(this.httpService.delete(`${this.baseUrl}/tables/clients/rows/${clientId}`));
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) {
+      if (this.isStatus(error, 404)) {
         throw new NotFoundException(`Client '${clientId}' not found`);
       }
       throw new ServiceUnavailableException('Homework DB unavailable while deleting client');
@@ -208,11 +263,10 @@ export class HomeworkDbService {
       );
       return { rowId: (response.data as { id?: string }).id };
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) {
+      if (this.isStatus(error, 404)) {
         throw new NotFoundException("Table 'invoices' not found in Homework DB");
       }
-      if (axiosError.response?.status === 400) {
+      if (this.isStatus(error, 400)) {
         throw new InternalServerErrorException(
           'Homework DB rejected invoice payload (schema mismatch or invalid data)',
         );
@@ -227,11 +281,10 @@ export class HomeworkDbService {
         this.httpService.put(`${this.baseUrl}/tables/invoices/rows/${invoiceId}`, invoice),
       );
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) {
+      if (this.isStatus(error, 404)) {
         throw new NotFoundException(`Invoice '${invoiceId}' not found`);
       }
-      if (axiosError.response?.status === 400) {
+      if (this.isStatus(error, 400)) {
         throw new InternalServerErrorException('Homework DB rejected invoice update payload');
       }
       throw new ServiceUnavailableException('Homework DB unavailable while updating invoice');
@@ -244,8 +297,7 @@ export class HomeworkDbService {
         this.httpService.delete(`${this.baseUrl}/tables/invoices/rows/${invoiceId}`),
       );
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) {
+      if (this.isStatus(error, 404)) {
         throw new NotFoundException(`Invoice '${invoiceId}' not found`);
       }
       throw new ServiceUnavailableException('Homework DB unavailable while deleting invoice');
@@ -259,29 +311,9 @@ export class HomeworkDbService {
       );
 
       const rows = response.data.data ?? [];
-      return rows.map((row) => {
-        const payload = row.data as {
-          client_type?: 'individual' | 'company';
-          name?: string;
-          email?: string;
-          phone?: string;
-          tax_identifier?: string;
-          address?: string;
-        };
-
-        return {
-          id: row.id,
-          client_type: payload.client_type ?? 'individual',
-          name: String(payload.name ?? ''),
-          email: String(payload.email ?? ''),
-          phone: String(payload.phone ?? ''),
-          tax_identifier: String(payload.tax_identifier ?? ''),
-          address: String(payload.address ?? ''),
-        };
-      });
+      return rows.map((row) => this.mapClientRow(row));
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) {
+      if (this.isStatus(error, 404)) {
         throw new NotFoundException("Table 'clients' not found in Homework DB");
       }
       throw new ServiceUnavailableException('Homework DB unavailable while reading clients');
@@ -300,39 +332,9 @@ export class HomeworkDbService {
       );
 
       const rows = response.data.data ?? [];
-      return rows.map((row) => {
-        const payload = row.data as {
-          client_id?: string;
-          invoice_number?: string;
-          description?: string;
-          subtotal_amount?: number;
-          tax_amount?: number;
-          total_amount?: number;
-          currency?: string;
-          products_json?: string;
-          issue_date?: string;
-          due_date?: string;
-          status?: 'draft' | 'sent' | 'paid' | 'overdue';
-        };
-
-        return {
-          id: row.id,
-          client_id: String(payload.client_id ?? ''),
-          invoice_number: String(payload.invoice_number ?? ''),
-          description: String(payload.description ?? ''),
-          subtotal_amount: Number(payload.subtotal_amount ?? 0),
-          tax_amount: Number(payload.tax_amount ?? 0),
-          total_amount: Number(payload.total_amount ?? 0),
-          currency: String(payload.currency ?? '').toUpperCase(),
-          products_json: String(payload.products_json ?? '[]'),
-          issue_date: String(payload.issue_date ?? ''),
-          due_date: String(payload.due_date ?? ''),
-          status: payload.status ?? 'draft',
-        };
-      });
+      return rows.map((row) => this.mapInvoiceRow(row));
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 404) {
+      if (this.isStatus(error, 404)) {
         throw new NotFoundException("Table 'invoices' not found in Homework DB");
       }
       throw new ServiceUnavailableException('Homework DB unavailable while reading invoices');

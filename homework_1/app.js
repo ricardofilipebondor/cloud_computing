@@ -117,6 +117,34 @@ const server = http.createServer(async (req,res) => {
         return;
     }
 
+    // DELETE /tables - Delete all tables
+    if(pathname === "/tables" && req.method === "DELETE"){
+        try {
+            const tablesData = Indexer.getTables();
+            const tableNames = Object.keys(tablesData);
+
+            for (const tableName of tableNames) {
+                await Table.delete(tableName);
+            }
+
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+                status: "ok",
+                code: 200,
+                message: "All tables deleted successfully",
+                deletedCount: tableNames.length
+            }));
+        } catch (err) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+                status: "error",
+                code: 500,
+                message: "Internal server error while deleting tables"
+            }));
+        }
+        return;
+    }
+
     // GET /tables/{name} - Get table schema
     const tableSchemaMatch = pathname.match(/^\/tables\/([^\/]+)$/);
     if(tableSchemaMatch && req.method === "GET"){

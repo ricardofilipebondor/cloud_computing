@@ -1,0 +1,1 @@
+{"name":"departments","columns":[{"name":"name","type":"string"},{"name":"code","type":"string"},{"name":"manager_name","type":"string"},{"name":"location","type":"string"},{"name":"budget","type":"number"}]}

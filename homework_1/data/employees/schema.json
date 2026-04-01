@@ -1,0 +1,1 @@
+{"name":"employees","columns":[{"name":"name","type":"string"},{"name":"email","type":"string"},{"name":"base_salary","type":"number"},{"name":"department_name","type":"string"},{"name":"job_title","type":"string"},{"name":"phone","type":"string"},{"name":"hire_date","type":"string"}]}

@@ -1,1 +1,1 @@
-{"name":"users","columns":[{"name":"name","type":"boolean"},{"name":"age","type":"string"}]}
+{"name":"users","columns":[{"name":"name","type":"boolean"},{"name":"age","type":"number"}]}

@@ -4,6 +4,15 @@ import { HomeworkDbService } from '../integrations/homework-db.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 
+type ClientPayload = {
+  client_type: 'individual' | 'company';
+  name: string;
+  email: string;
+  phone: string;
+  tax_identifier: string;
+  address: string;
+};
+
 @Injectable()
 export class ClientsService {
   constructor(
@@ -11,24 +20,41 @@ export class ClientsService {
     private readonly emailValidationService: ExternalEmailValidationService,
   ) {}
 
-  async createClient(dto: CreateClientDto) {
-    const emailValidation = await this.emailValidationService.validateEmail(dto.email);
+  private ensureClientExists<T>(client: T | null, clientId: string): T {
+    if (!client) {
+      throw new NotFoundException(`Client '${clientId}' not found`);
+    }
+    return client;
+  }
+
+  private async validateEmailOrThrow(email: string): Promise<void> {
+    const emailValidation = await this.emailValidationService.validateEmail(email);
     if (!emailValidation.isValid) {
       throw new BadRequestException({
         message: 'Email validation failed',
-        email: dto.email,
+        email,
         providerResponse: emailValidation.raw,
       });
     }
+  }
 
-    const payload = {
-      client_type: dto.clientType,
-      name: dto.name,
-      email: dto.email,
-      phone: dto.phone,
-      tax_identifier: dto.taxIdentifier,
-      address: dto.address,
+  private toClientPayload(
+    dto: CreateClientDto | UpdateClientDto,
+    fallback?: ClientPayload,
+  ): ClientPayload {
+    return {
+      client_type: dto.clientType ?? fallback?.client_type ?? 'individual',
+      name: dto.name ?? fallback?.name ?? '',
+      email: dto.email ?? fallback?.email ?? '',
+      phone: dto.phone ?? fallback?.phone ?? '',
+      tax_identifier: dto.taxIdentifier ?? fallback?.tax_identifier ?? '',
+      address: dto.address ?? fallback?.address ?? '',
     };
+  }
+
+  async createClient(dto: CreateClientDto) {
+    await this.validateEmailOrThrow(dto.email);
+    const payload = this.toClientPayload(dto);
 
     const created = await this.homeworkDbService.insertClient(payload);
     return {
@@ -52,10 +78,10 @@ export class ClientsService {
   }
 
   async getClientById(clientId: string) {
-    const client = await this.homeworkDbService.getClientById(clientId);
-    if (!client) {
-      throw new NotFoundException(`Client '${clientId}' not found`);
-    }
+    const client = this.ensureClientExists(
+      await this.homeworkDbService.getClientById(clientId),
+      clientId,
+    );
     return {
       status: 'ok',
       data: client,
@@ -63,29 +89,14 @@ export class ClientsService {
   }
 
   async updateClient(clientId: string, dto: UpdateClientDto) {
-    const existingClient = await this.homeworkDbService.getClientById(clientId);
-    if (!existingClient) {
-      throw new NotFoundException(`Client '${clientId}' not found`);
-    }
-
-    const nextClient = {
-      client_type: dto.clientType ?? existingClient.client_type,
-      name: dto.name ?? existingClient.name,
-      email: dto.email ?? existingClient.email,
-      phone: dto.phone ?? existingClient.phone,
-      tax_identifier: dto.taxIdentifier ?? existingClient.tax_identifier,
-      address: dto.address ?? existingClient.address,
-    };
+    const existingClient = this.ensureClientExists(
+      await this.homeworkDbService.getClientById(clientId),
+      clientId,
+    );
+    const nextClient = this.toClientPayload(dto, existingClient);
 
     if (dto.email && dto.email !== existingClient.email) {
-      const emailValidation = await this.emailValidationService.validateEmail(dto.email);
-      if (!emailValidation.isValid) {
-        throw new BadRequestException({
-          message: 'Email validation failed',
-          email: dto.email,
-          providerResponse: emailValidation.raw,
-        });
-      }
+      await this.validateEmailOrThrow(dto.email);
     }
 
     await this.homeworkDbService.updateClient(clientId, nextClient);
@@ -100,10 +111,7 @@ export class ClientsService {
   }
 
   async deleteClient(clientId: string) {
-    const existingClient = await this.homeworkDbService.getClientById(clientId);
-    if (!existingClient) {
-      throw new NotFoundException(`Client '${clientId}' not found`);
-    }
+    this.ensureClientExists(await this.homeworkDbService.getClientById(clientId), clientId);
 
     const hasInvoices = await this.homeworkDbService.hasInvoicesForClient(clientId);
     if (hasInvoices) {

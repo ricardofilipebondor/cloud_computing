@@ -19,6 +19,26 @@ type InvoicePayload = {
   status: 'draft' | 'sent' | 'paid' | 'overdue';
 };
 
+type InvoiceLine = {
+  name: string;
+  quantity: number;
+  unit_price: number;
+  vat_percent: number;
+  currency: string;
+  line_subtotal: number;
+  line_tax: number;
+  line_total: number;
+  line_total_in_invoice_currency: number;
+};
+
+type InvoiceFinancials = {
+  subtotalAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  convertedTotals: Record<string, number>;
+  normalizedProducts: InvoiceLine[];
+};
+
 const TARGET_CURRENCIES = ['RON', 'USD', 'EUR', 'GBP'];
 
 @Injectable()
@@ -28,54 +48,65 @@ export class InvoicesService {
     private readonly exchangeRateService: ExchangeRateService,
   ) {}
 
-  private async convertAmountBetweenCurrencies(
-    amount: number,
-    fromCurrency: string,
-    toCurrency: string,
-    ratesCache: Map<string, Record<string, number>>,
-  ): Promise<number> {
-    const normalizedFrom = fromCurrency.toUpperCase();
-    const normalizedTo = toCurrency.toUpperCase();
-    if (normalizedFrom === normalizedTo) {
-      return Number(amount.toFixed(2));
+  private ensureInvoiceExists<T>(invoice: T | null, invoiceId: string): T {
+    if (!invoice) {
+      throw new NotFoundException(`Invoice '${invoiceId}' not found`);
     }
+    return invoice;
+  }
 
-    if (!ratesCache.has(normalizedFrom)) {
-      const rates = await this.exchangeRateService.getRates(normalizedFrom);
-      ratesCache.set(normalizedFrom, rates.rates);
+  private async ensureClientExists(clientId: string) {
+    const client = await this.homeworkDbService.getClientById(clientId);
+    if (!client) {
+      throw new BadRequestException(`Client '${clientId}' does not exist`);
     }
+    return client;
+  }
 
-    const fromRates = ratesCache.get(normalizedFrom);
-    const rate = fromRates?.[normalizedTo];
-    if (!rate) {
-      throw new BadRequestException(
-        `Currency conversion not available from ${normalizedFrom} to ${normalizedTo}`,
-      );
+  private ensureProductsExist(products: InvoiceProductDto[]): void {
+    if (products.length === 0) {
+      throw new BadRequestException('Invoice must include at least one product');
     }
-    return Number((amount * rate).toFixed(2));
+  }
+
+  private buildInvoicePayloadFromDto(dto: CreateInvoiceDto, financials: InvoiceFinancials): InvoicePayload {
+    return {
+      client_id: dto.clientId,
+      invoice_number: dto.invoiceNumber,
+      description: dto.description,
+      subtotal_amount: financials.subtotalAmount,
+      tax_amount: financials.taxAmount,
+      total_amount: financials.totalAmount,
+      currency: dto.currency.toUpperCase(),
+      products_json: JSON.stringify(financials.normalizedProducts),
+      issue_date: dto.issueDate,
+      due_date: dto.dueDate,
+      status: dto.status,
+    };
+  }
+
+  private buildInvoiceUpdatePayload(existingInvoice: InvoicePayload & { [key: string]: string | number }, dto: UpdateInvoiceDto, clientId: string): InvoicePayload {
+    return {
+      client_id: clientId,
+      invoice_number: dto.invoiceNumber ?? String(existingInvoice.invoice_number),
+      description: dto.description ?? String(existingInvoice.description),
+      subtotal_amount: 0,
+      tax_amount: 0,
+      total_amount: 0,
+      currency: (dto.currency ?? String(existingInvoice.currency)).toUpperCase(),
+      products_json: '',
+      issue_date: dto.issueDate ?? String(existingInvoice.issue_date),
+      due_date: dto.dueDate ?? String(existingInvoice.due_date),
+      status: (dto.status ?? existingInvoice.status) as InvoicePayload['status'],
+    };
   }
 
   private async buildInvoiceFinancials(
     products: InvoiceProductDto[],
     invoiceCurrency: string,
-  ): Promise<{
-    subtotalAmount: number;
-    taxAmount: number;
-    totalAmount: number;
-    convertedTotals: Record<string, number>;
-    normalizedProducts: Array<{
-      name: string;
-      quantity: number;
-      unit_price: number;
-      vat_percent: number;
-      currency: string;
-      line_subtotal: number;
-      line_tax: number;
-      line_total: number;
-      line_total_in_invoice_currency: number;
-    }>;
-  }> {
+  ): Promise<InvoiceFinancials> {
     const ratesCache = new Map<string, Record<string, number>>();
+    const invoiceCurrencyNormalized = invoiceCurrency.toUpperCase();
     let subtotalAmount = 0;
     let taxAmount = 0;
 
@@ -86,24 +117,37 @@ export class InvoicesService {
         const lineTax = Number((lineSubtotal * (product.vatPercent / 100)).toFixed(2));
         const lineTotal = Number((lineSubtotal + lineTax).toFixed(2));
 
-        const lineSubtotalInInvoiceCurrency = await this.convertAmountBetweenCurrencies(
-          lineSubtotal,
-          currency,
-          invoiceCurrency,
-          ratesCache,
-        );
-        const lineTaxInInvoiceCurrency = await this.convertAmountBetweenCurrencies(
-          lineTax,
-          currency,
-          invoiceCurrency,
-          ratesCache,
-        );
-        const lineTotalInInvoiceCurrency = await this.convertAmountBetweenCurrencies(
-          lineTotal,
-          currency,
-          invoiceCurrency,
-          ratesCache,
-        );
+        const normalizedFrom = currency;
+        const normalizedTo = invoiceCurrencyNormalized;
+
+        let lineSubtotalInInvoiceCurrency: number;
+        let lineTaxInInvoiceCurrency: number;
+        let lineTotalInInvoiceCurrency: number;
+
+        if (normalizedFrom === normalizedTo) {
+          // Dacă moneda produsului e aceeași cu moneda facturii, nu facem conversie,
+          // dar păstrăm aceeași rotunjire la 2 zecimale ca înainte.
+          lineSubtotalInInvoiceCurrency = Number(lineSubtotal.toFixed(2));
+          lineTaxInInvoiceCurrency = Number(lineTax.toFixed(2));
+          lineTotalInInvoiceCurrency = Number(lineTotal.toFixed(2));
+        } else {
+          if (!ratesCache.has(normalizedFrom)) {
+            const rates = await this.exchangeRateService.getRates(normalizedFrom);
+            ratesCache.set(normalizedFrom, rates.rates);
+          }
+
+          const fromRates = ratesCache.get(normalizedFrom);
+          const rate = fromRates?.[normalizedTo];
+          if (!rate) {
+            throw new BadRequestException(
+              `Currency conversion not available from ${normalizedFrom} to ${normalizedTo}`,
+            );
+          }
+
+          lineSubtotalInInvoiceCurrency = Number((lineSubtotal * rate).toFixed(2));
+          lineTaxInInvoiceCurrency = Number((lineTax * rate).toFixed(2));
+          lineTotalInInvoiceCurrency = Number((lineTotal * rate).toFixed(2));
+        }
 
         subtotalAmount = Number((subtotalAmount + lineSubtotalInInvoiceCurrency).toFixed(2));
         taxAmount = Number((taxAmount + lineTaxInInvoiceCurrency).toFixed(2));
@@ -125,7 +169,7 @@ export class InvoicesService {
     const totalAmount = Number((subtotalAmount + taxAmount).toFixed(2));
     const convertedTotals = await this.exchangeRateService.convertAmount(
       totalAmount,
-      invoiceCurrency,
+      invoiceCurrencyNormalized,
       TARGET_CURRENCIES,
     );
 
@@ -201,27 +245,9 @@ export class InvoicesService {
   }
 
   async createInvoice(dto: CreateInvoiceDto) {
-    const client = await this.homeworkDbService.getClientById(dto.clientId);
-    if (!client) {
-      throw new BadRequestException(`Client '${dto.clientId}' does not exist`);
-    }
-
-    const invoiceCurrency = dto.currency.toUpperCase();
-    const financials = await this.buildInvoiceFinancials(dto.products, invoiceCurrency);
-
-    const payload: InvoicePayload = {
-      client_id: dto.clientId,
-      invoice_number: dto.invoiceNumber,
-      description: dto.description,
-      subtotal_amount: financials.subtotalAmount,
-      tax_amount: financials.taxAmount,
-      total_amount: financials.totalAmount,
-      currency: invoiceCurrency,
-      products_json: JSON.stringify(financials.normalizedProducts),
-      issue_date: dto.issueDate,
-      due_date: dto.dueDate,
-      status: dto.status,
-    };
+    const client = await this.ensureClientExists(dto.clientId);
+    const financials = await this.buildInvoiceFinancials(dto.products, dto.currency.toUpperCase());
+    const payload = this.buildInvoicePayloadFromDto(dto, financials);
 
     const created = await this.homeworkDbService.insertInvoice(payload);
 
@@ -267,49 +293,32 @@ export class InvoicesService {
       this.homeworkDbService.getClientRows(),
     ]);
 
-    if (!invoice) {
-      throw new NotFoundException(`Invoice '${invoiceId}' not found`);
-    }
+    const existingInvoice = this.ensureInvoiceExists(invoice, invoiceId);
 
-    const linkedClient = client.find((row) => row.id === invoice.client_id);
+    const linkedClient = client.find((row) => row.id === existingInvoice.client_id);
 
     return {
       status: 'ok',
-      data: await this.enrichInvoice(invoice, linkedClient?.name ?? null, linkedClient?.email ?? null),
+      data: await this.enrichInvoice(
+        existingInvoice,
+        linkedClient?.name ?? null,
+        linkedClient?.email ?? null,
+      ),
     };
   }
 
   async updateInvoice(invoiceId: string, dto: UpdateInvoiceDto) {
-    const existingInvoice = await this.homeworkDbService.getInvoiceById(invoiceId);
-    if (!existingInvoice) {
-      throw new NotFoundException(`Invoice '${invoiceId}' not found`);
-    }
+    const existingInvoice = this.ensureInvoiceExists(
+      await this.homeworkDbService.getInvoiceById(invoiceId),
+      invoiceId,
+    );
 
     const nextClientId = dto.clientId ?? existingInvoice.client_id;
-    const client = await this.homeworkDbService.getClientById(nextClientId);
-    if (!client) {
-      throw new BadRequestException(`Client '${nextClientId}' does not exist`);
-    }
+    const client = await this.ensureClientExists(nextClientId);
+    const payload = this.buildInvoiceUpdatePayload(existingInvoice, dto, nextClientId);
 
-    const payload: InvoicePayload = {
-      client_id: nextClientId,
-      invoice_number: dto.invoiceNumber ?? existingInvoice.invoice_number,
-      description: dto.description ?? existingInvoice.description,
-      subtotal_amount: 0,
-      tax_amount: 0,
-      total_amount: 0,
-      currency: (dto.currency ?? existingInvoice.currency).toUpperCase(),
-      products_json: '',
-      issue_date: dto.issueDate ?? existingInvoice.issue_date,
-      due_date: dto.dueDate ?? existingInvoice.due_date,
-      status: dto.status ?? existingInvoice.status,
-    };
-
-    const products =
-      dto.products ?? this.parseInvoiceProducts(existingInvoice.products_json);
-    if (products.length === 0) {
-      throw new BadRequestException('Invoice must include at least one product');
-    }
+    const products = dto.products ?? this.parseInvoiceProducts(existingInvoice.products_json);
+    this.ensureProductsExist(products);
 
     const financials = await this.buildInvoiceFinancials(products, payload.currency);
     payload.subtotal_amount = financials.subtotalAmount;
@@ -334,10 +343,7 @@ export class InvoicesService {
   }
 
   async deleteInvoice(invoiceId: string) {
-    const existingInvoice = await this.homeworkDbService.getInvoiceById(invoiceId);
-    if (!existingInvoice) {
-      throw new NotFoundException(`Invoice '${invoiceId}' not found`);
-    }
+    this.ensureInvoiceExists(await this.homeworkDbService.getInvoiceById(invoiceId), invoiceId);
     await this.homeworkDbService.deleteInvoice(invoiceId);
     return {
       status: 'ok',

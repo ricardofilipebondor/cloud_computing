@@ -102,10 +102,9 @@ export default function HomePage() {
   return (
     <main className="mx-auto min-h-screen w-full max-w-7xl p-6 md:p-10">
       <header className="mb-8 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-700 p-6 text-white shadow-md">
-        <h1 className="text-3xl font-bold">CorpSync CRM</h1>
+        <h1 className="text-3xl font-bold">CRM</h1>
         <p className="mt-2 text-sm text-slate-200">
-          Professional client and invoice administration with email validation and live currency
-          conversion.
+          Professional client and invoice administration
         </p>
       </header>
 

@@ -16,6 +16,10 @@
         "summary": "Get tables",
         "responses": {}
       },
+      "delete": {
+        "summary": "Delete all tables",
+        "responses": {}
+      },
       "post": {
         "summary": "Create table",
         "responses": {},

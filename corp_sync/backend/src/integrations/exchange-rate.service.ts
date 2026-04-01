@@ -1,8 +1,4 @@
-import { HttpService } from '@nestjs/axios';
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { AxiosError } from 'axios';
-import { firstValueFrom } from 'rxjs';
 
 type RatesResult = {
   base: string;
@@ -11,28 +7,28 @@ type RatesResult = {
 
 @Injectable()
 export class ExchangeRateService {
-  private readonly apiUrl: string;
-  private readonly apiKey: string;
-
-  constructor(
-    private readonly httpService: HttpService,
-    private readonly configService: ConfigService,
-  ) {
-    this.apiUrl =
-      this.configService.get<string>('EXCHANGE_RATE_API_URL') ?? 'https://v6.exchangerate-api.com/v6';
-    this.apiKey = this.configService.get<string>('EXCHANGE_RATE_API_KEY') ?? '';
-  }
-
   async getRates(baseCurrency: string): Promise<RatesResult> {
-    if (!this.apiKey) {
+    const apiKey = process.env.EXCHANGE_RATE_API_KEY;
+    const apiUrl =
+      process.env.EXCHANGE_RATE_API_URL ?? 'https://v6.exchangerate-api.com/v6';
+
+    if (!apiKey) {
       throw new ServiceUnavailableException('EXCHANGE_RATE_API_KEY is missing in .env');
     }
 
-    const endpoint = `${this.apiUrl}/${this.apiKey}/latest/${baseCurrency.toUpperCase()}`;
+    const endpoint = `${apiUrl}/${apiKey}/latest/${baseCurrency.toUpperCase()}`;
 
     try {
-      const response = await firstValueFrom(this.httpService.get(endpoint));
-      const payload = response.data as Record<string, unknown>;
+      const response = await fetch(endpoint);
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new ServiceUnavailableException('ExchangeRate API rejected provided key');
+        }
+        throw new ServiceUnavailableException('ExchangeRate API is unavailable');
+      }
+
+      const payload = (await response.json()) as Record<string, unknown>;
 
       const conversionRates =
         (payload.conversion_rates as Record<string, number> | undefined) ??
@@ -47,10 +43,6 @@ export class ExchangeRateService {
         rates: conversionRates,
       };
     } catch (error) {
-      const axiosError = error as AxiosError;
-      if (axiosError.response?.status === 401 || axiosError.response?.status === 403) {
-        throw new ServiceUnavailableException('ExchangeRate API rejected provided key');
-      }
       if (error instanceof ServiceUnavailableException) {
         throw error;
       }
