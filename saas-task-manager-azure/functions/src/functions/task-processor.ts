@@ -81,70 +81,152 @@ function summarizeText(rawText: string): string | null {
   }
 
   const sentences = normalized.split(/(?<=[.!?])\s+/).filter(Boolean);
-  if (sentences.length <= 2) {
-    return normalized.slice(0, 400);
+  const targetSentenceCount = getSummaryConfig(normalized.length).targetSentences;
+  if (sentences.length <= targetSentenceCount) {
+    return normalizeSummary(normalized.slice(0, getSummaryConfig(normalized.length).maxChars));
   }
 
-  return `${sentences[0]} ${sentences[1]}`.slice(0, 500);
+  return normalizeSummary(sentences.slice(0, targetSentenceCount).join(" "));
 }
 
-async function summarizeWithAzureOpenAI(text: string, context: InvocationContext): Promise<string | null> {
-  const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const apiKey = process.env.AZURE_OPENAI_API_KEY;
-  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
-  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-10-21";
-
-  if (!endpoint || !apiKey || !deployment) {
-    return null;
+function normalizeSummary(summary: string): string {
+  const compact = summary.replace(/\s+/g, " ").trim();
+  if (!compact) {
+    return compact;
   }
 
-  const normalizedEndpoint = endpoint.replace(/\/+$/, "");
-  const url = `${normalizedEndpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
+  // If model output ends mid-word/sentence, trim safely and close with punctuation.
+  const endsWithPunctuation = /[.!?]$/.test(compact);
+  if (endsWithPunctuation) {
+    return compact;
+  }
 
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "api-key": apiKey
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        messages: [
-          {
-            role: "system",
-            content:
-              "You summarize plain-text attachments for task management. Return a concise summary in maximum 3 sentences."
-          },
-          {
-            role: "user",
-            content: text.slice(0, 8000)
-          }
-        ],
-        temperature: 0.2,
-        max_tokens: 220
-      })
-    });
+  const withoutPartialWord = compact.replace(/\s+\S*$/, "").trim();
+  if (!withoutPartialWord) {
+    return `${compact}.`;
+  }
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      context.warn(`Azure OpenAI summary request failed: ${response.status} ${errorBody}`);
+  return /[.!?]$/.test(withoutPartialWord) ? withoutPartialWord : `${withoutPartialWord}.`;
+}
+
+function getSummaryConfig(textLength: number): { targetSentences: number; maxChars: number; maxOutputTokens: number } {
+  if (textLength < 600) {
+    return { targetSentences: 4, maxChars: 520, maxOutputTokens: 260 };
+  }
+  if (textLength < 1800) {
+    return { targetSentences: 4, maxChars: 700, maxOutputTokens: 340 };
+  }
+  if (textLength < 5000) {
+    return { targetSentences: 5, maxChars: 950, maxOutputTokens: 480 };
+  }
+  return { targetSentences: 6, maxChars: 1300, maxOutputTokens: 620 };
+}
+
+function parseTaskMessage(message: TaskMessage | string): TaskMessage {
+  if (typeof message !== "string") {
+    return message;
+  }
+
+  const parseJson = (value: string): TaskMessage | null => {
+    try {
+      return JSON.parse(value) as TaskMessage;
+    } catch {
       return null;
     }
+  };
 
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = payload.choices?.[0]?.message?.content?.trim();
-    return content ? content.slice(0, 700) : null;
-  } catch (error) {
-    context.warn("Azure OpenAI summary request failed, using local summarizer.", error);
-    return null;
-  } finally {
-    clearTimeout(timeout);
+  const direct = parseJson(message);
+  if (direct) {
+    return direct;
   }
+
+  // Some queue pipelines deliver base64-encoded payloads depending on host settings.
+  const decoded = Buffer.from(message, "base64").toString("utf-8");
+  const fromBase64 = parseJson(decoded);
+  if (fromBase64) {
+    return fromBase64;
+  }
+
+  throw new Error("Could not parse queue message payload as JSON.");
+}
+
+async function summarizeWithGemini(text: string, context: InvocationContext): Promise<string | null> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const summaryConfig = getSummaryConfig(text.length);
+  const configuredModel = (process.env.GEMINI_MODEL || "").trim().replace(/^models\//, "");
+  const modelsToTry = [
+    configuredModel,
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-1.5-flash-8b"
+  ].filter((value, index, array) => Boolean(value) && array.indexOf(value) === index);
+
+  if (!apiKey) {
+    return null;
+  }
+
+  for (const model of modelsToTry) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text:
+                    `Summarize this task attachment in ${summaryConfig.targetSentences} complete, clear sentences. ` +
+                    "Keep key actionable details (who/what/when if present), avoid generic wording, and never end mid-sentence.\n\n" +
+                    text.slice(0, 8000)
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: summaryConfig.maxOutputTokens
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        context.warn(`Gemini summary request failed for model ${model}: ${response.status} ${errorBody}`);
+        if (response.status === 404) {
+          continue;
+        }
+        return null;
+      }
+
+      const payload = (await response.json()) as {
+        candidates?: Array<{
+          content?: {
+            parts?: Array<{ text?: string }>;
+          };
+        }>;
+      };
+      const content = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join(" ").trim();
+      if (content) {
+        return normalizeSummary(content).slice(0, summaryConfig.maxChars);
+      }
+    } catch (error) {
+      context.warn(`Gemini summary request failed for model ${model}, using local summarizer.`, error);
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return null;
 }
 
 function getBlobNameFromUrl(fileUrl: string, containerName: string): string | null {
@@ -208,10 +290,10 @@ async function buildSummaryFromAttachment(fileUrl: string, context: InvocationCo
     return null;
   }
 
-  const openAiSummary = await summarizeWithAzureOpenAI(text, context);
-  if (openAiSummary) {
-    context.log("Summary generated with Azure OpenAI.");
-    return openAiSummary;
+  const geminiSummary = await summarizeWithGemini(text, context);
+  if (geminiSummary) {
+    context.log("Summary generated with Gemini.");
+    return geminiSummary;
   }
 
   context.log("Summary generated with local fallback summarizer.");
@@ -219,7 +301,7 @@ async function buildSummaryFromAttachment(fileUrl: string, context: InvocationCo
 }
 
 async function handler(message: TaskMessage | string, context: InvocationContext): Promise<void> {
-  const parsed = typeof message === "string" ? (JSON.parse(message) as TaskMessage) : message;
+  const parsed = parseTaskMessage(message);
 
   context.log(`Processing queued task: ${parsed.taskId} (${parsed.title})`);
 
@@ -258,7 +340,7 @@ async function handler(message: TaskMessage | string, context: InvocationContext
 }
 
 app.storageQueue("taskProcessor", {
-  connection: "AzureWebJobsStorage",
+  connection: "Storage",
   queueName: process.env.AZURE_QUEUE_NAME || "tasksqueue",
   handler
 });
