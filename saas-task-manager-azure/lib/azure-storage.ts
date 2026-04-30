@@ -1,4 +1,8 @@
-import { BlobServiceClient, BlockBlobClient } from "@azure/storage-blob";
+import {
+  BlobServiceClient,
+  BlockBlobClient,
+  BlobSASPermissions
+} from "@azure/storage-blob";
 import { QueueClient } from "@azure/storage-queue";
 import { randomUUID } from "crypto";
 import { validateEnv } from "./env";
@@ -18,7 +22,7 @@ function getAzureClients() {
 
 export async function ensureAzureResources() {
   const { containerClient, queueClient } = getAzureClients();
-  await containerClient.createIfNotExists({ access: "blob" });
+  await containerClient.createIfNotExists();
   await queueClient.createIfNotExists();
 }
 
@@ -35,6 +39,23 @@ export async function uploadTaskFile(file: File): Promise<string> {
   });
 
   return blockBlobClient.url;
+}
+
+export async function getSignedBlobUrl(blobUrl: string): Promise<string> {
+  const { containerClient } = getAzureClients();
+  const containerPrefix = `${containerClient.url}/`;
+
+  if (!blobUrl.startsWith(containerPrefix)) {
+    return blobUrl;
+  }
+
+  const blobName = decodeURIComponent(blobUrl.slice(containerPrefix.length));
+  const blobClient = containerClient.getBlobClient(blobName);
+
+  return blobClient.generateSasUrl({
+    permissions: BlobSASPermissions.parse("r"),
+    expiresOn: new Date(Date.now() + 60 * 60 * 1000)
+  });
 }
 
 export async function sendTaskToQueue(payload: { taskId: string; title: string }) {

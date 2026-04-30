@@ -68,6 +68,7 @@ export default function HomePage() {
             onChange={(event) => setTitle(event.target.value)}
             className="w-full rounded border border-slate-300 px-3 py-2"
             placeholder="Create onboarding document"
+            suppressHydrationWarning
           />
         </div>
 
@@ -77,6 +78,7 @@ export default function HomePage() {
             type="file"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             className="w-full rounded border border-slate-300 px-3 py-2"
+            suppressHydrationWarning
           />
         </div>
 
@@ -84,6 +86,7 @@ export default function HomePage() {
           type="submit"
           disabled={loading}
           className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          suppressHydrationWarning
         >
           {loading ? "Creating..." : "Create task"}
         </button>
@@ -109,6 +112,7 @@ export default function HomePage() {
                 <p className="mt-1 text-xs text-slate-500">
                   Queue processed: {task.processed ? "yes" : "pending"}
                 </p>
+                {task.summary ? <p className="mt-1 text-sm text-slate-700">Summary: {task.summary}</p> : null}
                 {task.fileUrl ? (
                   <a
                     href={task.fileUrl}

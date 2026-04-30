@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendTaskToQueue, uploadTaskFile } from "@/lib/azure-storage";
+import {
+  getSignedBlobUrl,
+  sendTaskToQueue,
+  uploadTaskFile
+} from "@/lib/azure-storage";
 
 export const runtime = "nodejs";
 
@@ -8,7 +12,13 @@ export async function GET() {
   const tasks = await prisma.task.findMany({
     orderBy: { createdAt: "desc" }
   });
-  return NextResponse.json(tasks);
+  const tasksWithSignedUrls = await Promise.all(
+    tasks.map(async (task) => ({
+      ...task,
+      fileUrl: task.fileUrl ? await getSignedBlobUrl(task.fileUrl) : null
+    }))
+  );
+  return NextResponse.json(tasksWithSignedUrls);
 }
 
 export async function POST(request: NextRequest) {
@@ -35,7 +45,12 @@ export async function POST(request: NextRequest) {
 
     await sendTaskToQueue({ taskId: task.id, title: task.title });
 
-    return NextResponse.json(task, { status: 201 });
+    const createdTask = {
+      ...task,
+      fileUrl: task.fileUrl ? await getSignedBlobUrl(task.fileUrl) : null
+    };
+
+    return NextResponse.json(createdTask, { status: 201 });
   } catch (error) {
     console.error("POST /api/tasks failed:", error);
     return NextResponse.json({ error: "Failed to create task" }, { status: 500 });

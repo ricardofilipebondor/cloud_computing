@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "@azure/functions": "^4.7.3",
-    "pg": "^8.15.6"
+    "@azure/storage-blob": "^12.31.0",
+    "mssql": "^12.5.0"
   },
   "devDependencies": {
+    "@types/mssql": "^12.3.0",
     "@types/node": "^22.15.3",
-    "@types/pg": "^8.15.1",
+    "azure-functions-core-tools": "^4.10.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.8.3"
   }
