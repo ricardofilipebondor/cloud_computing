@@ -21,4 +21,4 @@ coverage/
 service-account*.json
 
 # GCP console download: <project-id>-<private_key_id>.json (never commit)
-tema_3/studybuddy-*-*.json
+homework_3/studybuddy-*-*.json
